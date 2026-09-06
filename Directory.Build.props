@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <RestorePackagesPath>$(MSBuildThisFileDirectory).packages</RestorePackagesPath>
+    <NuGetAudit>false</NuGetAudit>
+  </PropertyGroup>
+</Project>

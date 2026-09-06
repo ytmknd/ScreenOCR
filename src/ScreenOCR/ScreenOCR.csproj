@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Resources\ScreenOCR.ico</ApplicationIcon>
+    <AssemblyName>ScreenOCR</AssemblyName>
+    <RootNamespace>ScreenOCR</RootNamespace>
+    <Version>1.0.0</Version>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\ScreenOCR.ico" />
+    <EmbeddedResource Include="Resources\joyo-kanji.txt" />
+    <EmbeddedResource Include="Resources\english-words.txt" />
+    <EmbeddedResource Include="Scripts\ppocrv6_small.py" />
+  </ItemGroup>
+</Project>
