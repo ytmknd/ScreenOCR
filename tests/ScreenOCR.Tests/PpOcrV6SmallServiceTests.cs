@@ -45,6 +45,47 @@ public sealed class PpOcrV6SmallServiceTests
     }
 
     [Fact]
+    public void ParseResultReportsRecOnlyFallback()
+    {
+        const string json = """
+        {
+          "engine": "PP-OCRv6 Small",
+          "mode": "rec-only",
+          "scale": 3.0,
+          "margin": 16,
+          "lines": [
+            { "text": "Hello", "confidence": 0.99, "boundingBox": [[0, 0], [35, 0], [35, 14], [0, 14]] }
+          ]
+        }
+        """;
+
+        OcrPipelineResult result = PpOcrV6SmallService.ParseResult(json, new AppConfig());
+
+        Assert.Equal(OcrFailure.None, result.Failure);
+        Assert.Equal("Hello", result.Text);
+        Assert.Equal("PPv6-rec", result.SelectedAttempt);
+        Assert.Equal(3.0, result.Scale);
+        Assert.Equal("PPv6-rec", Assert.Single(result.Attempts).Name);
+    }
+
+    [Fact]
+    public void ParseResultDefaultsToDetectModeAndUnitScale()
+    {
+        const string json = """
+        {
+          "lines": [
+            { "text": "Hello", "confidence": 0.99, "boundingBox": [[0, 0], [35, 0], [35, 14], [0, 14]] }
+          ]
+        }
+        """;
+
+        OcrPipelineResult result = PpOcrV6SmallService.ParseResult(json, new AppConfig());
+
+        Assert.Equal("PPv6", result.SelectedAttempt);
+        Assert.Equal(1, result.Scale);
+    }
+
+    [Fact]
     public void ParseResultRejectsMissingLines()
     {
         Assert.Throws<System.Text.Json.JsonException>(() =>

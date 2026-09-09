@@ -16,6 +16,12 @@ public sealed class PpOcrV6SmallService
 {
     private const string ScriptResourceName = "ScreenOCR.Scripts.ppocrv6_small.py";
 
+    /// <summary>検出（DB）→ 認識の通常経路。</summary>
+    private const string DetectAttemptName = "PPv6";
+
+    /// <summary>検出が空だったため、切り抜き全体を 1 行として認識モデルへ渡した経路（§6.7.1）。</summary>
+    private const string RecOnlyAttemptName = "PPv6-rec";
+
     public static PpOcrV6SmallAvailability GetAvailability(AppConfig config)
     {
         if (!TryResolvePython(config.PpOcrV6SmallPythonPath, out string? python, out string? error))
@@ -144,21 +150,23 @@ public sealed class PpOcrV6SmallService
             lines.Add(new OcrLineInfo([new OcrWordInfo(text, ReadBounds(item))]));
         }
 
+        string attemptName = ReadMode(document.RootElement) == "rec-only" ? RecOnlyAttemptName : DetectAttemptName;
+        double scale = ReadScale(document.RootElement);
         string rawText = string.Join(Environment.NewLine, lines.Select(x => x.Words[0].Text));
         OcrQuality quality = OcrQualityScorer.Evaluate(rawText, config.ScoreWeights);
-        var attempt = new OcrAttemptInfo("PPv6", 1, false, false, quality.ValidChars,
+        var attempt = new OcrAttemptInfo(attemptName, scale, false, false, quality.ValidChars,
             quality.ImplausibleChars, quality.Score, elapsedMilliseconds);
         OcrMergeSummary merge = OcrMergeSummary.NotAttempted("PP-OCRv6 Small 単独実行", "ja+en");
         if (lines.Count == 0 || quality.ValidChars == 0)
         {
-            return new(OcrFailure.NoTextFound, string.Empty, rawText, "ja+en", 1,
-                quality.ValidChars, quality.ImplausibleChars, quality.Score, "PPv6", [attempt], lines,
+            return new(OcrFailure.NoTextFound, string.Empty, rawText, "ja+en", scale,
+                quality.ValidChars, quality.ImplausibleChars, quality.Score, attemptName, [attempt], lines,
                 elapsedMilliseconds, merge);
         }
 
         string processed = raw ? rawText : TextPostProcessor.Process(lines, config.TextOptions);
-        return new(OcrFailure.None, processed, rawText, "ja+en", 1,
-            quality.ValidChars, quality.ImplausibleChars, quality.Score, "PPv6", [attempt], lines,
+        return new(OcrFailure.None, processed, rawText, "ja+en", scale,
+            quality.ValidChars, quality.ImplausibleChars, quality.Score, attemptName, [attempt], lines,
             elapsedMilliseconds, merge);
     }
 
@@ -232,6 +240,18 @@ public sealed class PpOcrV6SmallService
         return false;
     }
 
+    private static string ReadMode(JsonElement root) =>
+        root.TryGetProperty("mode", out JsonElement mode) && mode.ValueKind == JsonValueKind.String
+            ? mode.GetString() ?? string.Empty
+            : string.Empty;
+
+    /// <summary>スクリプトが検出前に掛けた拡大率。ログ・診断用で、座標は元の切り抜き基準に戻っている。</summary>
+    private static double ReadScale(JsonElement root) =>
+        root.TryGetProperty("scale", out JsonElement scale) && scale.ValueKind == JsonValueKind.Number
+            && scale.TryGetDouble(out double value) && value > 0
+            ? value
+            : 1;
+
     private static RectF ReadBounds(JsonElement item)
     {
         if (!item.TryGetProperty("boundingBox", out JsonElement box) || box.ValueKind != JsonValueKind.Array) return default;
@@ -256,7 +276,7 @@ public sealed class PpOcrV6SmallService
     }
 
     private static OcrPipelineResult Failure(OcrFailure failure, long elapsed, string? error) =>
-        new(failure, string.Empty, string.Empty, "ja+en", 1, 0, 0, 0, "PPv6", [], [], elapsed, null, error);
+        new(failure, string.Empty, string.Empty, "ja+en", 1, 0, 0, 0, DetectAttemptName, [], [], elapsed, null, error);
 
     private static void TryKill(Process process)
     {
