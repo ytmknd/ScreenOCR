@@ -239,6 +239,9 @@ CLI の 1 ショット実行はエンジン生成を毎回含むため、この�
    v
 [3] 選択矩形をスナップショットから切り出し（再キャプチャしない）
    v
+[3.5] QR コードを走査（qrCodeEnabled）
+   |   読めたら [7] へ直行（OCR は行わない）／読めなければ次へ
+   v
 [4] 前処理（拡大・反転・回転）→ 複数試行
    v
 [5] Windows.Media.Ocr で認識 → 最良の試行を選択
@@ -273,6 +276,7 @@ OCR エンジン    ▸ ● Windows OCR
 OCR 言語        ▸ ● 日本語 (ja)
                    （自動）
                    ...インストール済み言語を列挙
+QR コードを先に読み取る  ☑
 後処理          ▸ ☑ 日本語の余分な空白を削除
                    ☐ 行を連結する
                    ☑ 暗背景を自動反転
@@ -446,6 +450,27 @@ JSON には `mode`（`"det"` / `"rec-only"`）と `scale` を含める。C# 側�
 
 実測（Segoe UI / メイリオ、12〜40 px の「Hello」「日本語」を余白 0〜2 px で切り抜いた 38 件）では、対策前は 18 件で検出が空だったが、拡大＋余白で 0 件になった。
 
+### 6.8 QR コードの読み取り（OCR の前段。`qrCodeEnabled`、既定 ON）
+
+画面の QR コードは、OCR に通しても模様として扱われ意味のある文字列にならない。選択範囲を OCR へ渡す**前**に QR として読み、成功したらその内容をクリップボードへ入れて OCR は行わない（§3 の [3.5]）。専用のホットキーもモード切り替えも設けず、`Ctrl+Alt+6` の操作は 1 つのままにする。**読めなければ何も通知せず、そのまま従来どおり OCR へ進む**（QR を含まない範囲を選ぶ通常の使い方に一切影響を与えないため）。
+
+デコードは ZXing.Net（Apache-2.0、`ZXing.Net` パッケージ）で行う。ローカル完結であり、画像も結果も外部へ送信しない。OCR と違い成否は「読めた／読めなかった」の二値なので、§6.4 のようなスコアリングはせず、最初に成功した試行の結果をそのまま採る。
+
+| 試行名 | 内容 | 目的 |
+| --- | --- | --- |
+| `QR` | 等倍 | 通常の QR |
+| `QR-inv` | 白黒反転 | ダークテーマの画面に描かれた反転 QR |
+| `QR-2x` | 2 倍拡大 | 1 モジュールが 1〜2 px しかない小さな QR。長辺 700 px 未満の選択でのみ試す（広い範囲での無駄な再走査を避ける） |
+
+- `BarcodeFormat.QR_CODE` のみを対象とし、`TryHarder` と `AutoRotate` を有効にする（傾き・回転のある QR を読むため）。
+- 1 回の選択に複数の QR があれば全部読み、検出順に改行で連結する。同じ文字列は 1 件にまとめる（`DecodeMultiple` が回転違いで同じシンボルを 2 回返すことがあるため）。
+- **Kanji モード（Shift_JIS）と ECI 指定の QR を読むには `CodePagesEncodingProvider` の登録が要る**。.NET では既定で登録されていないため、最初の走査前に一度だけ `Encoding.RegisterProvider` を呼ぶ。
+- 輝度源は `RGBLuminanceSource` の `BGR32`（アルファを読まない形式）とする。`BitBlt` 由来のビットマップはアルファが 0 のことがあり、アルファを見る `BGRA32` では全面が透明と解釈されて読めなくなる。
+- バウンディングボックスは ZXing が返す位置決めパターンの中心から作るため、シンボル外周より一回り内側になる（`--json` とログ用で、切り出しには使わない）。
+- 走査で例外が出た場合は警告をログへ残し、QR を諦めて OCR を続行する（QR の失敗で OCR まで止めない）。
+
+**URL を自動で開くことはしない。** 開くのは利用者が成功通知をクリックしたときだけで、その導線を出すのも `http` / `https` の 1 件だけのときに限る（§8.2 の S2）。QR の内容は撮影元を信用できないため、スキャンだけで遷移が起きる作りにはしない。
+
 ---
 
 ## 7. テキスト後処理（D3 への対応。本アプリの中核）
@@ -527,6 +552,7 @@ ZoomIt 互換は「画面の行＝出力の行」。ON の場合のみ次で連�
 | ID | 状況 | メッセージ |
 | --- | --- | --- |
 | S1 | 成功 | `NN 文字をコピーしました`（サブ行に `ja / 3.0x` のように言語と採用倍率） |
+| S2 | QR 成功 | `QR コードを読み取りました`（サブ行は `NN 文字をコピーしました`、複数なら `N 件 / NN 文字をコピーしました`。内容が `http`/`https` の 1 件だけなら `クリックで開く: <ホスト名>` とし、クリックで既定のブラウザーを開く） |
 | E1 | 認識エンジンが 1 つも無い | `OCR 言語がインストールされていません` / `設定 > 時刻と言語 > 言語と地域 > 日本語 > 言語オプション > 光学式文字認識 を追加してください`（クリックで `ms-settings:regionlanguage` を開く） |
 | E2 | 文字が見つからない | `文字を認識できませんでした` / `範囲を広げるか、拡大表示してから再試行してください` |
 | E3 | クリップボードを開けない | `クリップボードを開けませんでした` / `他のアプリが使用中の可能性があります` |
@@ -547,7 +573,8 @@ ZoomIt 互換は「画面の行＝出力の行」。ON の場合のみ次で連�
 
 - 出力先: `%APPDATA%\ScreenOCR\logs\screenocr-YYYYMMDD.log`（UTF-8、7 日でローテーション削除）。
 - 記録内容: 起動／終了、ホットキー登録結果、利用可能言語一覧、1 回の OCR ごとに `選択矩形 / スケール / 試行ごとの文字数 / 採用試行 / 所要 ms / 最終文字数`。
-- **認識テキスト本文は既定で記録しない**（画面内容が機微な場合があるため）。
+- QR を読めたときは `選択矩形 / 試行名 / 件数 / 所要 ms / 文字数` を記録する。読めなかったときは何も記録しない（通常の OCR と区別がつかず、ログが膨らむだけのため）。
+- **認識テキスト本文は既定で記録しない**（画面内容が機微な場合があるため）。QR のデコード結果も同様に記録しない（URL や個人情報のことがあるため）。
 - `debugSaveImages`（既定 OFF）が ON のとき、前処理後の PNG を `%APPDATA%\ScreenOCR\debug\` に `yyyyMMdd-HHmmss-<attempt>.png` で保存する。認識不良の切り分け用。
 
 ---
@@ -567,6 +594,8 @@ ZoomIt 互換は「画面の行＝出力の行」。ON の場合のみ次で連�
   "ppOcrV6SmallPythonPath": "python",
   "ppOcrV6SmallTimeoutMs": 120000,
   "ocrLanguage": "auto",          // "auto" | BCP-47 タグ（例 "ja"）
+
+  "qrCodeEnabled": true,          // OCR の前に QR コードを走査する（§6.8）
 
   "overlayDimPercent": 35,
   "selectionBorderColor": "#0078D4",
@@ -610,10 +639,12 @@ GUI を出さずに同じパイプラインを実行できるようにする。*
 | `ScreenOCR.exe --list-languages` | `AvailableRecognizerLanguages` と `MaxImageDimension` を標準出力に出して終了 |
 | `ScreenOCR.exe --ocr-file <path> [--engine windows\|ppocrv6-small] [--ppocr-python <path>] [--lang ja] [--raw] [--json]` | 選択したエンジンと§7のパイプラインを適用し、結果を標準出力へ。`--raw` は後処理なし。`--json` は試行ごとのスコア等を含む JSON |
 | `ScreenOCR.exe --region x,y,w,h [--lang ja] [--json]` | 画面座標を直接指定して OCR。結果を標準出力へ（クリップボードには書かない） |
+| `ScreenOCR.exe (--ocr-file <path> \| --region x,y,w,h) --qr [--json]` | §6.8 の QR 走査だけを行う。`--json` は試行名・件数・所要 ms・各コードのバウンディングボックスを含む |
 | `ScreenOCR.exe --version` | バージョン |
 
 - CLI モードは Mutex を取らず、トレイ常駐と同時に使える。
-- 終了コード: `0` 成功 / `1` 文字なし / `2` エンジンなし / `3` 引数エラー / `4` その他。
+- 終了コード: `0` 成功 / `1` 文字なし / `2` エンジンなし / `3` 引数エラー / `4` その他。QR が見つからなかった場合は `1`。
+- **GUI と違い、`--qr` を付けないかぎり CLI は QR を走査しない**（`--ocr-file` の出力が入力画像によって OCR 結果と QR の内容のどちらかに変わると、自動化の出力が読めなくなるため）。`--qr` は OCR を一切走らせないので、`--lang` / `--engine` / `--ppocr-python` / `--raw` / `--no-merge` との併用は黙って無視せず引数エラー（`3`）にする。
 - 標準出力のエンコーディングは UTF-8 に設定する（`Console.OutputEncoding`）。
 
 ---
@@ -625,6 +656,7 @@ GUI を出さずに同じパイプラインを実行できるようにする。*
 - **C# / .NET 10**（検証機に SDK 10.0.400 導入済み）
 - TFM: `net10.0-windows10.0.26100.0`（`Windows.Media.Ocr` の WinRT projection を利用。`Microsoft.Windows.SDK.NET.Ref` は NuGet から自動復元される。nuget.org への到達は確認済み）
 - `UseWindowsForms=true`（`NotifyIcon` / `Form` / `System.Drawing` を使う）
+- QR デコードのみ `ZXing.Net`（Apache-2.0）を NuGet から使う。アプリ本体で唯一の実行時パッケージ依存。ローカル完結で外部送信は無く、Python / RapidOCR の有無に関係なく動く。自前実装は有限体演算・Reed-Solomon・4 モードのデコードと Kanji モードまで必要になるため採らない
 - `<ApplicationManifest>` で PerMonitorV2 と `requestedExecutionLevel level="asInvoker"` を宣言
 - 発行: `dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true`（配布用に `--self-contained true` も併記）
 
@@ -646,6 +678,7 @@ D:\ScreenOCR\
     SelectionOverlay.cs    オーバーレイ Form・ドラッグ選択・描画
     ImagePreprocessor.cs   スケール決定・拡大・反転・回転・平均輝度
     OcrService.cs          エンジン生成・SoftwareBitmap 変換・試行制御・スコアリング
+    QrCodeReader.cs        §6.8 QR 走査（ZXing.Net。等倍・反転・2 倍拡大）
     TextPostProcessor.cs   §7 全体（純粋関数）
     ClipboardWriter.cs     CF_UNICODETEXT 書き込み・リトライ
     Toast.cs               自前トーストウィンドウ
@@ -658,7 +691,10 @@ D:\ScreenOCR\
     TextPostProcessorTests.cs
     HotKeyParserTests.cs
     ImagePreprocessorTests.cs
+    QrCodeReaderTests.cs
     AppConfigTests.cs
+  tests\fixtures\            qr-*.png（generate-qr-samples.py で生成、コミット済み）
+  tests\generate-qr-samples.py
 ```
 
 `TextPostProcessor` は WinRT 型に直接依存させず、`OcrWordInfo(string Text, RectF Bounds)` / `OcrLineInfo(IReadOnlyList<OcrWordInfo> Words)` という自前の DTO を入力にする。`OcrService` が WinRT の `OcrResult` を DTO へ詰め替える。これによりテストプロジェクトから OCR エンジン無しで後処理を検証できる。
@@ -707,6 +743,8 @@ D:\ScreenOCR\
 
 `PpOcrV6SmallServiceTests`: RapidOCRブリッジJSONの行テキスト・4点バウンディングボックスを共通DTOへ変換できること、空結果と不正JSONを区別すること。
 
+`QrCodeReaderTests`: `tests/fixtures/qr-*.png` を読み直す。固定画像は **OpenCV の QR エンコーダー**（`tests/generate-qr-samples.py`）で作り、デコード側（ZXing.Net）と別実装にする。ZXing で書いて ZXing で読む自己完結テストは、エンコード側と同じ思い違いを検出できないため採らない。項目は、ASCII の URL、UTF-8 バイトモードの日本語、**Kanji モード（Shift_JIS）**、白黒反転（試行名が `QR-inv` になること）、1 モジュール 2 px の小さな QR、1 枚に 2 個の QR（改行で連結されること）、バウンディングボックスが元画像の内側に収まること、QR の無い文字画像で例外にも誤検出にもならないこと、`http`/`https` 以外（`mailto:`、`file:`、`javascript:`、スキーム無し）では URL を開く導線を出さないこと。
+
 ### 12.2 手動／CLI による検証
 
 | # | 手順 | 期待結果 |
@@ -724,6 +762,7 @@ D:\ScreenOCR\
 | M11 | 二重起動 | 2 個目は通知して終了、1 個目は影響を受けない |
 | M12 | RapidOCR導入後に `--list-engines`、続けて日英混在画像を `--engine ppocrv6-small` で認識 | rapidocr 3.9 以上が available と表示され、日英テキストと座標が得られる |
 | M13 | `ppocrv6-small` で英単語 1 語・日本語 2〜3 文字を余白なしでぴったり囲んで選択（§6.7.1） | 認識され、ログの試行名が `PPv6`（検出成功）または `PPv6-rec`（一段落とし）になる |
+| M14 | 画面に URL の QR コードを表示して Ctrl+Alt+6 で囲む | S2 のトーストが出て URL がクリップボードに入る。**クリックするまでブラウザーは開かない**。続けて QR の無い文字を選ぶと、通知なしで従来どおり OCR される |
 
 ---
 

@@ -14,6 +14,9 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="ZXing.Net" Version="0.16.11" />
+  </ItemGroup>
+  <ItemGroup>
     <EmbeddedResource Include="Resources\ScreenOCR.ico" />
     <EmbeddedResource Include="Resources\joyo-kanji.txt" />
     <EmbeddedResource Include="Resources\english-words.txt" />

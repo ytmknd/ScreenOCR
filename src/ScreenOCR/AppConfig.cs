@@ -119,6 +119,12 @@ public sealed class AppConfig
     /// <summary>基礎点の文字重み: 数字 1 文字あたりの基礎点。</summary>
     public double ScoreDigitCharWeight { get; set; } = 0.5;
 
+    /// <summary>
+    /// 選択範囲を OCR へ渡す前に QR コードを探すかどうか。見つかればその内容をコピーして OCR は行わず、
+    /// 見つからなければ従来どおり OCR へ進む（<see cref="QrCodeReader"/>）。
+    /// </summary>
+    public bool QrCodeEnabled { get; set; } = true;
+
     public int OverlayDimPercent { get; set; } = 35;
     public string SelectionBorderColor { get; set; } = "#0078D4";
     public int MinSelectionSize { get; set; } = 5;

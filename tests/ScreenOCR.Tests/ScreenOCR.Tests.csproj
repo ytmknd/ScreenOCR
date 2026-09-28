@@ -15,4 +15,7 @@
     <ProjectReference Include="..\..\src\ScreenOCR\ScreenOCR.csproj" />
     <Using Include="Xunit" />
   </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\fixtures\*.png" Link="fixtures\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

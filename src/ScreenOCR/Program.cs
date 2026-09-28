@@ -53,6 +53,15 @@ internal static class Program
             bool jsonVerbose = args.Contains("--json-verbose", StringComparer.Ordinal);
             bool json = jsonVerbose || args.Contains("--json", StringComparer.Ordinal);
             bool noMerge = args.Contains("--no-merge", StringComparer.Ordinal);
+            if (args.Contains("--qr", StringComparer.Ordinal))
+            {
+                using Bitmap qrSource = LoadCliBitmap(args, out _);
+                QrScanResult qr = QrCodeReader.Scan(qrSource);
+                if (json) Console.WriteLine(JsonSerializer.Serialize(qr, new JsonSerializerOptions { WriteIndented = true }));
+                else if (qr.Found) Console.WriteLine(qr.Text);
+                else Console.Error.WriteLine("QR コードが見つかりませんでした");
+                return qr.Found ? 0 : 1;
+            }
             string? language = ValueAfter(args, "--lang");
             string? engine = ValueAfter(args, "--engine");
             string? ppPython = ValueAfter(args, "--ppocr-python");
@@ -132,7 +141,7 @@ internal static class Program
     private static void ValidateOcrArguments(string[] args)
     {
         var valueOptions = new HashSet<string>(StringComparer.Ordinal) { "--ocr-file", "--region", "--lang", "--engine", "--ppocr-python" };
-        var flagOptions = new HashSet<string>(StringComparer.Ordinal) { "--raw", "--json", "--json-verbose", "--no-merge" };
+        var flagOptions = new HashSet<string>(StringComparer.Ordinal) { "--raw", "--json", "--json-verbose", "--no-merge", "--qr" };
         var seen = new HashSet<string>(StringComparer.Ordinal);
         for (int i = 0; i < args.Length; i++)
         {
@@ -148,10 +157,16 @@ internal static class Program
         bool hasRegion = seen.Contains("--region");
         if (hasFile == hasRegion) throw new ArgumentException("--ocr-file または --region のどちらか一方を指定してください。");
         if (hasRegion && seen.Contains("--raw")) throw new ArgumentException("--raw は --ocr-file と一緒に指定してください。");
+        if (seen.Contains("--qr"))
+        {
+            // --qr は OCR を一切走らせないため、OCR 用のオプションは黙って無視せずエラーにする。
+            string? conflict = new[] { "--lang", "--engine", "--ppocr-python", "--raw", "--no-merge" }.FirstOrDefault(seen.Contains);
+            if (conflict is not null) throw new ArgumentException($"--qr は {conflict} と一緒に指定できません。");
+        }
     }
 
     private static void PrintUsage() => Console.Error.WriteLine(
-        "使用法: ScreenOCR --list-engines | --list-languages | --ocr-file <path> [--engine windows|ppocrv6-small] [--ppocr-python <path>] [--lang ja,en-US] [--raw] [--no-merge] [--json | --json-verbose] | --region x,y,w,h [--engine windows|ppocrv6-small] [--ppocr-python <path>] [--lang ja,en-US] [--no-merge] [--json | --json-verbose] | --version");
+        "使用法: ScreenOCR --list-engines | --list-languages | --ocr-file <path> [--engine windows|ppocrv6-small] [--ppocr-python <path>] [--lang ja,en-US] [--raw] [--no-merge] [--json | --json-verbose] | --region x,y,w,h [--engine windows|ppocrv6-small] [--ppocr-python <path>] [--lang ja,en-US] [--no-merge] [--json | --json-verbose] | (--ocr-file <path> | --region x,y,w,h) --qr [--json] | --version");
 }
 
 /// <summary>

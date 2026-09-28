@@ -83,6 +83,7 @@ public sealed class TrayApp : ApplicationContext
             crop = _snapshot!.Crop(selection);
             _snapshot.Dispose();
             _snapshot = null;
+            if (await TryHandleQrCodeAsync(crop, selection)) return;
             float dpiPercent = ScreenCapture.GetDpiPercent(selection);
             string engineName = _config.OcrEngine == OcrBackendNames.PpOcrV6Small ? "PP-OCRv6 Small" : "Windows OCR";
             indicator = new ProcessingIndicator(selection, engineName);
@@ -143,6 +144,40 @@ public sealed class TrayApp : ApplicationContext
         }
     }
 
+    /// <summary>
+    /// 選択範囲に QR コードがあればその内容をコピーして <c>true</c> を返す。無ければ <c>false</c> を返し、
+    /// 呼び出し側は従来どおり OCR へ進む。走査は数十 ms で終わるため、処理中インジケーターは出さない。
+    /// デコード結果は通知の本文にもログにも残さない（内容が URL や個人情報のことがあるため）。
+    /// </summary>
+    private async Task<bool> TryHandleQrCodeAsync(Bitmap crop, Rectangle selection)
+    {
+        if (!_config.QrCodeEnabled) return false;
+
+        QrScanResult qr;
+        try { qr = await Task.Run(() => QrCodeReader.Scan(crop)); }
+        catch (Exception ex)
+        {
+            _logger.Warning($"QR 走査に失敗しました（OCR を続行します）: {ex.Message}");
+            return false;
+        }
+        if (!qr.Found) return false;
+
+        _logger.Info($"QR rect={selection.X},{selection.Y},{selection.Width},{selection.Height}; attempt={qr.Attempt}; codes={qr.Matches.Count}; elapsed={qr.ElapsedMilliseconds}ms; chars={qr.Text.Length}");
+        if (!ClipboardWriter.TryWrite(_window.Handle, qr.Text, _config.CopyImageToo ? crop : null))
+        {
+            Toast.ShowMessage("クリップボードを開けませんでした", "他のアプリが使用中の可能性があります", true, selection);
+            return true;
+        }
+
+        bool single = qr.Matches.Count == 1;
+        // URL は自動で開かない。開くのは利用者が通知をクリックしたときだけ。
+        if (single && QrCodeReader.TryGetHttpUrl(qr.Text, out Uri? url))
+            Toast.ShowMessage("QR コードを読み取りました", $"クリックで開く: {url.Host}", false, selection, () => OpenPath(url.AbsoluteUri));
+        else
+            Toast.ShowMessage("QR コードを読み取りました", single ? $"{qr.Text.Length} 文字をコピーしました" : $"{qr.Matches.Count} 件 / {qr.Text.Length} 文字をコピーしました", false, selection);
+        return true;
+    }
+
     private ContextMenuStrip BuildMenu()
     {
         var menu = new ContextMenuStrip();
@@ -153,6 +188,7 @@ public sealed class TrayApp : ApplicationContext
         menu.Items.Add(BuildEngineMenu());
         menu.Items.Add(BuildLanguageMenu());
         menu.Items.Add(BuildMergeToggle());
+        menu.Items.Add(Toggle("QR コードを先に読み取る", () => _config.QrCodeEnabled, x => _config.QrCodeEnabled = x));
         var processing = new ToolStripMenuItem("後処理");
         processing.DropDownItems.Add(Toggle("日本語の余分な空白を削除", () => _config.RemoveCjkSpaces, x => _config.RemoveCjkSpaces = x));
         processing.DropDownItems.Add(Toggle("行を連結する", () => _config.JoinLines, x => _config.JoinLines = x));
