@@ -209,8 +209,11 @@ public sealed class OcrService
     private static SoftwareBitmap ToSoftwareBitmap(Bitmap source)
     {
         using var bitmap = new Bitmap(source.Width, source.Height, PixelFormat.Format32bppArgb);
-        using (Graphics graphics = Graphics.FromImage(bitmap)) graphics.DrawImageUnscaled(source, 0, 0);
         var rectangle = new Rectangle(0, 0, bitmap.Width, bitmap.Height);
+        // 画素を 1:1 で写す。DrawImageUnscaled は画像とキャンバスの解像度差ぶん拡大縮小するため、
+        // 96 dpi の前処理画像と画面 DPI のキャンバスが噛み合うと黙って切り落とされる。
+        using (Graphics graphics = Graphics.FromImage(bitmap))
+            graphics.DrawImage(source, rectangle, rectangle, GraphicsUnit.Pixel);
         BitmapData data = bitmap.LockBits(rectangle, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
         try
         {

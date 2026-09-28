@@ -71,8 +71,10 @@ public static class ImagePreprocessor
     public static double CalculateAverageLuminance(Bitmap bitmap)
     {
         using var converted = new Bitmap(bitmap.Width, bitmap.Height, PixelFormat.Format32bppArgb);
-        using (Graphics graphics = Graphics.FromImage(converted)) graphics.DrawImageUnscaled(bitmap, 0, 0);
         Rectangle rectangle = new(0, 0, converted.Width, converted.Height);
+        // 画素を 1:1 で写す（DrawImageUnscaled は解像度差ぶん拡大縮小してしまう）。
+        using (Graphics graphics = Graphics.FromImage(converted))
+            graphics.DrawImage(bitmap, rectangle, rectangle, GraphicsUnit.Pixel);
         BitmapData data = converted.LockBits(rectangle, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
         try
         {

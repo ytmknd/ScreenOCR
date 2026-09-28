@@ -169,12 +169,25 @@ public sealed class TrayApp : ApplicationContext
             return true;
         }
 
-        bool single = qr.Matches.Count == 1;
-        // URL は自動で開かない。開くのは利用者が通知をクリックしたときだけ。
-        if (single && QrCodeReader.TryGetHttpUrl(qr.Text, out Uri? url))
-            Toast.ShowMessage("QR コードを読み取りました", $"クリックで開く: {url.Host}", false, selection, () => OpenPath(url.AbsoluteUri));
-        else
-            Toast.ShowMessage("QR コードを読み取りました", single ? $"{qr.Text.Length} 文字をコピーしました" : $"{qr.Matches.Count} 件 / {qr.Text.Length} 文字をコピーしました", false, selection);
+        // URL は自動で開かない。開くのは利用者が通知をクリックしたときだけ。複数の QR があっても
+        // 開くのは読む順で最初のリンク 1 つだけで、どれを開くかはホスト名の表示で分かる。
+        Uri? url = QrCodeReader.FindFirstHttpUrl(qr.Matches);
+        string copied = qr.Matches.Count == 1
+            ? $"{qr.Text.Length} 文字をコピーしました"
+            : $"{qr.Matches.Count} 件 / {qr.Text.Length} 文字をコピーしました";
+        if (url is null)
+        {
+            Toast.ShowMessage("QR コードを読み取りました", copied, false, selection);
+            return true;
+        }
+
+        // 行き先は省略せず全部出す。ホストだけでは、同じホストの下に置かれた転送や偽ログイン
+        // （/login?next=... など）を見分けられないため。表示のみ punycode・制御文字除去済みで、
+        // 実際に開くのは AbsoluteUri（QrCodeReader.DescribeUrl 参照）。
+        string open = $"クリックで開く: {QrCodeReader.DescribeUrl(url)}";
+        Toast.ShowMessage("QR コードを読み取りました",
+            qr.Matches.Count == 1 ? open : $"{qr.Matches.Count} 件をコピー ・ {open}",
+            false, selection, () => OpenPath(url.AbsoluteUri));
         return true;
     }
 

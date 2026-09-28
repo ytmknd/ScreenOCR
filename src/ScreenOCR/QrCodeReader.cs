@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Drawing.Imaging;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
 using ZXing;
@@ -86,6 +87,69 @@ public static class QrCodeReader
         return true;
     }
 
+    /// <summary>
+    /// 読む順（上から下、同じ行では左から右）に並べ替える。ZXing の検出順は画面上の位置と
+    /// 関係がないため、そのままではクリップボードの並びも「1 つ目」も見た目と食い違う。
+    /// 上端のずれが最も低い QR の高さの半分までなら同じ行とみなす（固定の帯で切ると、
+    /// 境目をまたいだだけの横並びが別の行に分かれてしまうため）。
+    /// </summary>
+    public static IReadOnlyList<QrCodeMatch> InReadingOrder(IReadOnlyList<QrCodeMatch> matches)
+    {
+        if (matches.Count < 2) return matches;
+        float tolerance = Math.Max(1f, matches.Min(x => x.Bounds.Height) / 2f);
+        var remaining = matches.OrderBy(x => x.Bounds.Top).ToList();
+        var ordered = new List<QrCodeMatch>(matches.Count);
+        while (remaining.Count > 0)
+        {
+            float rowTop = remaining[0].Bounds.Top;
+            List<QrCodeMatch> row = remaining.Where(x => x.Bounds.Top - rowTop <= tolerance).ToList();
+            remaining.RemoveAll(row.Contains);
+            ordered.AddRange(row.OrderBy(x => x.Bounds.Left));
+        }
+        return ordered;
+    }
+
+    /// <summary>
+    /// 読む順で最初に見つかった <c>http</c> / <c>https</c> のリンク。1 回の選択に複数の QR が
+    /// あってもリンクは 1 つだけ開くため、どれを開くかをここで決める。無ければ <c>null</c>。
+    /// </summary>
+    public static Uri? FindFirstHttpUrl(IEnumerable<QrCodeMatch> matches)
+    {
+        foreach (QrCodeMatch match in matches)
+            if (TryGetHttpUrl(match.Text, out Uri? url)) return url;
+        return null;
+    }
+
+    /// <summary>
+    /// 開く前に見せる URL の文字列。<see cref="Uri.AbsoluteUri"/> をそのまま出さず、次を守って組み立てる。
+    /// <list type="bullet">
+    /// <item>ホストは punycode（<see cref="Uri.IdnHost"/>）。同形異字を見分けられるようにするため。</item>
+    /// <item>ユーザー情報と既定でないポートも省かない。<c>https://accounts.example.com@evil.example/</c> の
+    /// ように、ホストらしく見せかけた部分を隠さないため。</item>
+    /// <item>双方向制御文字（<c>U+202E</c> など）を取り除く。表示順を反転させて拡張子や経路を
+    /// 偽装できるため。</item>
+    /// </list>
+    /// 実際に開くのはこの文字列ではなく <see cref="Uri.AbsoluteUri"/>。
+    /// </summary>
+    public static string DescribeUrl(Uri url)
+    {
+        ArgumentNullException.ThrowIfNull(url);
+        var builder = new StringBuilder(url.Scheme).Append("://");
+        if (!string.IsNullOrEmpty(url.UserInfo)) builder.Append(url.UserInfo).Append('@');
+        builder.Append(url.IdnHost);
+        if (!url.IsDefaultPort) builder.Append(':').Append(url.Port);
+        builder.Append(url.PathAndQuery).Append(url.Fragment);
+
+        var display = new StringBuilder(builder.Length);
+        foreach (char character in builder.ToString())
+        {
+            UnicodeCategory category = CharUnicodeInfo.GetUnicodeCategory(character);
+            if (category is UnicodeCategory.Format or UnicodeCategory.Control) continue;
+            display.Append(character);
+        }
+        return display.ToString();
+    }
+
     private static IReadOnlyList<QrCodeMatch>? RunAttempt(
         BarcodeReaderGeneric reader, Bitmap source, double scale, bool invert, CancellationToken cancellationToken)
     {
@@ -107,7 +171,7 @@ public static class QrCodeReader
                 if (string.IsNullOrEmpty(result?.Text) || !seen.Add(result.Text)) continue;
                 matches.Add(new QrCodeMatch(result.Text, ToBounds(result.ResultPoints, scale)));
             }
-            return matches.Count == 0 ? null : matches;
+            return matches.Count == 0 ? null : InReadingOrder(matches);
         }
         finally { resized?.Dispose(); }
     }
@@ -136,8 +200,12 @@ public static class QrCodeReader
     private static RGBLuminanceSource ToLuminanceSource(Bitmap source)
     {
         using var converted = new Bitmap(source.Width, source.Height, PixelFormat.Format32bppArgb);
-        using (Graphics graphics = Graphics.FromImage(converted)) graphics.DrawImageUnscaled(source, 0, 0);
         Rectangle rectangle = new(0, 0, converted.Width, converted.Height);
+        // 画素を 1:1 で写す。DrawImageUnscaled は名前に反して、画像とキャンバスの解像度が違うと
+        // その比だけ拡大縮小する。ImagePreprocessor.Resize の出力は 96 dpi、new Bitmap(w,h,fmt) は
+        // 画面 DPI（125% なら 120）になるため、拡大した試行だけが 1.25 倍されて右下が欠けていた。
+        using (Graphics graphics = Graphics.FromImage(converted))
+            graphics.DrawImage(source, rectangle, rectangle, GraphicsUnit.Pixel);
         BitmapData data = converted.LockBits(rectangle, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
         try
         {
