@@ -1,0 +1,23 @@
+ScreenOCR — Third-party notices
+================================
+
+This installation redistributes the following third-party components.
+The full license texts are in this folder.
+
+1. .NET Runtime and Windows Desktop Runtime (bundled, self-contained)
+   Copyright (c) .NET Foundation and Contributors
+   License: MIT                       -> dotnet-LICENSE.txt
+   Third-party notices of the runtime -> dotnet-THIRD-PARTY-NOTICES.txt
+
+2. ZXing.Net 0.16.11 (QR code decoding)
+   https://github.com/micjahn/ZXing.Net/
+   License: Apache License 2.0        -> ZXing.Net-LICENSE.txt
+
+3. Microsoft.Windows.SDK.NET / WinRT.Runtime (Windows API projection)
+   Copyright (c) Microsoft Corporation
+   License: https://aka.ms/WinSDKLicenseURL
+
+Not bundled: PP-OCRv6 Small runs through RapidOCR in a separately installed
+Python environment (scripts\install-ppocrv6-small.ps1 installs it with pip).
+Its packages and models are not part of this installation and are covered by
+their own licenses.

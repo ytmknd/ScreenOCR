@@ -160,6 +160,25 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 
 framework-dependent の発行物には .NET 10 Desktop Runtime が必要です。
 
+### インストーラー
+
+配布用のインストーラー（`ScreenOCR-Setup-<版>.exe`）は Inno Setup 7 で作ります。**.NET ランタイムを同梱する**（self-contained）ので、配布先に .NET を入れる必要はありません。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build-installer.ps1
+```
+
+スクリプトが self-contained 版を `artifacts\publish\ScreenOCR` に発行し、同梱ランタイムのライセンス文書を添えて `installer\ScreenOCR.iss` をコンパイルします。出力先は `artifacts\installer`（約 40 MB）です。Inno Setup は `Languages\Japanese.isl` まで揃ったインストールを自動で探し、見つからなければ `-Iscc <ISCC.exe のパス>` で指定します。
+
+インストーラーの動作:
+
+- **現在のユーザーにだけ入れます**（管理者権限不要）。既定の場所は `%LOCALAPPDATA%\Programs\ScreenOCR`。「アプリ」の一覧からアンインストールできます。
+- 任意のタスクとして、デスクトップのショートカット、サインイン時の起動（トレイの「スタートアップに登録」と同じ値を書きます）、**PP-OCRv6 Small の導入**（Python 3 とインターネット接続が必要。失敗するとコンソールが理由を出して止まります）を選べます。
+- ScreenOCR が常駐中だと、インストールもアンインストールも「実行中の ScreenOCR を検出しました」で止まります。先にトレイから終了してください。
+- アンインストールはスタートアップ登録も消しますが、**このインストール先を指している場合だけ**です。別の場所に置いた ScreenOCR の登録は残します。設定とログ（`%APPDATA%\ScreenOCR`）は残します。
+- 同梱物のライセンスは `licenses\` に入ります（.NET ランタイム: MIT、ZXing.Net: Apache-2.0）。
+- インストーラーは署名していないため、初回は SmartScreen の警告が出ます。
+
 ## GUI 手動確認
 
 自動テスト以外の確認は次の手順で行います。

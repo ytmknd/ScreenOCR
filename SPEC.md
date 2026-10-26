@@ -696,6 +696,7 @@ GUI を出さずに同じパイプラインを実行できるようにする。*
 - QR デコードのみ `ZXing.Net`（Apache-2.0）を NuGet から使う。アプリ本体で唯一の実行時パッケージ依存。ローカル完結で外部送信は無く、Python / RapidOCR の有無に関係なく動く。自前実装は有限体演算・Reed-Solomon・4 モードのデコードと Kanji モードまで必要になるため採らない
 - `<ApplicationManifest>` で PerMonitorV2 と `requestedExecutionLevel level="asInvoker"` を宣言
 - 発行: `dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true`（配布用に `--self-contained true` も併記）
+- 配布用インストーラー: Inno Setup 7（`installer\ScreenOCR.iss`、`scripts\build-installer.ps1` から作る）。.NET ランタイムは self-contained で同梱する。単一ファイルにはしない（Inno の LZMA2 が圧縮するので、二重圧縮は起動を遅くするだけ）。現在のユーザーにだけ入れる（`PrivilegesRequired=lowest`、`{autopf}`）。アプリがスタートアップ登録を HKCU、設定を `%APPDATA%` に置くユーザー単位の作りであるため。`AppId` は固定（アップグレードとアンインストールの同一性判定に使う）。`AppMutex` にアプリの単一インスタンス用ミューテックス `Global\ScreenOCR.SingleInstance` を指定し、常駐中の上書き・アンインストールを止める。アンインストール時の Run 値の削除は、値がインストール先を指すときに限る（別の場所に置いた ScreenOCR の登録を消さないため）。バージョンは発行した EXE から ISPP で読む。PP-OCRv6 Small（Python + RapidOCR）は同梱せず、任意タスクで導入スクリプトを実行する
 
 ### 11.2 プロジェクト構成
 
@@ -732,6 +733,12 @@ D:\ScreenOCR\
     AppConfigTests.cs
   tests\fixtures\            qr-*.png（generate-qr-samples.py で生成、コミット済み）
   tests\generate-qr-samples.py
+  installer\
+    ScreenOCR.iss            Inno Setup 7 のスクリプト
+    licenses\                同梱物のライセンス（.NET ランタイム分はビルド時にランタイムパックから添える）
+  scripts\
+    build-installer.ps1      self-contained 発行 → ライセンス添付 → ISCC
+    install-ppocrv6-small.ps1
 ```
 
 `TextPostProcessor` は WinRT 型に直接依存させず、`OcrWordInfo(string Text, RectF Bounds)` / `OcrLineInfo(IReadOnlyList<OcrWordInfo> Words)` という自前の DTO を入力にする。`OcrService` が WinRT の `OcrResult` を DTO へ詰め替える。これによりテストプロジェクトから OCR エンジン無しで後処理を検証できる。
